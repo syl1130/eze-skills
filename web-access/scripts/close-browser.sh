@@ -2,6 +2,10 @@
 # 优雅关闭 agent-browser Chrome 实例（跨平台）
 # 用法：bash close-browser.sh
 
+UTILS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=_utils.sh
+source "$UTILS_DIR/_utils.sh"
+
 CDP_PORT=9222
 PROFILE_DIR="$HOME/.claude/browser-profile"
 
@@ -11,20 +15,17 @@ python3 - <<'PYEOF' 2>/dev/null
 import json, socket, base64, urllib.request, struct
 
 try:
-    # 获取 WebSocket 调试 URL
     data = json.loads(urllib.request.urlopen('http://localhost:9222/json/version', timeout=3).read())
-    ws_url = data['webSocketDebuggerUrl']  # ws://localhost:9222/devtools/browser/uuid
+    ws_url = data['webSocketDebuggerUrl']
     path = ws_url[len('ws://localhost:9222'):]
 
-    # 建立 WebSocket 连接（手动握手，无需外部包）
     s = socket.socket()
     s.settimeout(5)
     s.connect(('localhost', 9222))
     key = base64.b64encode(b'claude-web-access!!').decode()
     s.send(f'GET {path} HTTP/1.1\r\nHost: localhost:9222\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n'.encode())
-    s.recv(4096)  # 读取 HTTP 101 升级响应
+    s.recv(4096)
 
-    # 发送 Browser.close CDP 命令（RFC 6455 客户端帧，需要 mask）
     msg = json.dumps({"id": 1, "method": "Browser.close"}).encode()
     mask = bytes([0, 0, 0, 0])
     masked = bytes(b ^ mask[i % 4] for i, b in enumerate(msg))
@@ -39,20 +40,22 @@ PYEOF
 
 # 2. 兜底：CDP 失败时按 OS 强制退出
 if [ $? -ne 0 ]; then
-  OS=$(uname -s)
-  case "$OS" in
-    Darwin)
-      # macOS：osascript 优雅退出，避免"意外退出"弹窗
+  case "$(get_os)" in
+    macos)
       OUR_PID=$(ps aux | grep "Google Chrome" | grep -- "--user-data-dir=${PROFILE_DIR}" | grep -v grep | awk '{print $2}' | head -1)
-      [ -n "$OUR_PID" ] && osascript -e "tell application \"System Events\" to tell (first process whose unix id is ${OUR_PID}) to quit" 2>/dev/null && echo "Browser closed (osascript)"
+      [ -n "$OUR_PID" ] && kill_pid "$OUR_PID" && echo "Browser closed (osascript)"
       ;;
-    Linux)
-      # Linux：SIGTERM 即可，无弹窗问题
+    linux)
       OUR_PID=$(ps aux | grep "google-chrome\|chromium" | grep -- "--user-data-dir=${PROFILE_DIR}" | grep -v grep | awk '{print $2}' | head -1)
-      [ -n "$OUR_PID" ] && kill "$OUR_PID" 2>/dev/null && echo "Browser closed (SIGTERM)"
+      [ -n "$OUR_PID" ] && kill_pid "$OUR_PID" && echo "Browser closed (SIGTERM)"
+      ;;
+    windows)
+      OUR_PID=$(wmic process where "name='chrome.exe'" get commandline,processid 2>/dev/null \
+        | grep "browser-profile" | grep -oE '[0-9]+$' | head -1 | tr -d ' \r\n')
+      [ -n "$OUR_PID" ] && kill_pid "$OUR_PID" && echo "Browser closed (taskkill)"
       ;;
     *)
-      echo "Unsupported OS: $OS — please close the browser manually"
+      echo "Unknown OS — please close the browser manually"
       ;;
   esac
 fi
