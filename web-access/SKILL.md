@@ -1,15 +1,15 @@
 ---
 name: web-access
-version: 1.1.0
+version: 1.3.0
 author: 一泽Eze
 license: MIT
-github: https://github.com/eze-is-1/eze-skills
+github: https://github.com/eze-is/eze-skills
 description: 
-  所有联网操作必须通过此 skill 处理，包括：搜索、网页抓取、登录后操作、动态页面交互等。
+  所有联网操作必须通过此 skill 处理，包括：搜索、网页抓取、登录后操作、网络交互等。
   触发场景：用户要求搜索信息、查看网页内容、访问需要登录的网站、操作网页界面、抓取社交媒体内容（小红书、微博、推特等）、读取动态渲染页面、以及任何需要真实浏览器环境的网络任务。
 metadata:
   author: 一泽Eze
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # web-access Skill
@@ -32,7 +32,7 @@ bash ~/.claude/skills/web-access/scripts/check-deps.sh
 > web-access 已就绪。凡是联网的需求直接说就行，我会自动选最合适的方式：
 > - 只需要搜索结果 → 直接搜，最快
 > - 需要看完整页面 → 抓取页面内容，不启动浏览器
-> - 需要登录/动态页面/浏览器操作 → 自动启动浏览器，登录一次后持久保存
+> - 需要登录/动态页面/浏览器操作 → 自动启动浏览器，登录一次后持久保存。支持多 sub-agent 集群并行使用多个浏览器。
 >
 > Windows 用户需要 Git Bash 环境（安装 Git for Windows 即可）。
 
@@ -87,28 +87,42 @@ bash ~/.claude/skills/web-access/scripts/check-deps.sh
 ### 启动
 
 ```bash
+# 单 agent 任务（默认端口 9222）
 bash ~/.claude/skills/web-access/scripts/ensure-browser.sh
+
+# 并行任务（端口由主 agent 在 task prompt 中指定，见「并行调研」章节）
+bash ~/.claude/skills/web-access/scripts/ensure-browser.sh $PORT
 ```
 
-- `Browser ready on port 9222` → 脚本自己启动的，状态可信，直接用（任务结束后关闭）
-- `already running` → 检测到残留进程，状态不可信，必须验证：运行 `agent-browser --cdp 9222 open about:blank`，成功则可用；失败则执行 close 后重新 ensure（任务结束后不关闭）
-- `ERROR` 或 agent-browser 无响应 → 执行 `bash ~/.claude/skills/web-access/scripts/close-browser.sh` 后重新运行
+输出 `Browser ready on port XXXX`。启动后必须执行以下两步：
+
+```bash
+# 解析端口并设置 session（所有后续命令自动继承，无需重复传参）
+PORT=<从输出解析的端口号>
+export AGENT_BROWSER_SESSION="port-${PORT}"
+```
+
+输出状态说明：
+- `Browser ready on port XXXX` → 可直接用，设置 PORT 和 SESSION 后继续（任务结束后关闭）
+- `ERROR` → 执行 `bash ~/.claude/skills/web-access/scripts/close-browser.sh [端口]` 后重新运行
 
 > **⚠️ 严禁降级**：只用 agent-browser CDP 模式，不切换到其他浏览器工具。Playwright MCP 底层同为 playwright-core + launchPersistentContext，能力等效，但 profile 路径不同——切换会丢失已有登录态，需重新登录。
 
 ### 常用命令
 
+将 `ensure-browser.sh` 输出中的端口号记为 `$PORT`，后续命令统一用该端口：
+
 ```bash
-agent-browser --cdp 9222 open <url>           # 打开页面
-agent-browser --cdp 9222 snapshot -i          # 可交互元素（操作用）
-agent-browser --cdp 9222 snapshot             # 完整无障碍树（读文字用）
-agent-browser --cdp 9222 click @ref-123       # 点击元素
-agent-browser --cdp 9222 fill @ref-123 "内容" # 填写输入框
-agent-browser --cdp 9222 wait load networkidle  # 仅用于 click/fill 触发导航后；open 已内置等待，勿在 open 后使用
-agent-browser --cdp 9222 scroll down 3000     # 触发懒加载
-agent-browser --cdp 9222 screenshot /tmp/x.png
-agent-browser --cdp 9222 screenshot --annotate      # snapshot -i ref 失效时的升级方案，见 references/commands.md
-agent-browser --cdp 9222 eval "<js>"          # 执行 JS，用于提取 DOM 信息
+agent-browser --cdp $PORT open <url>           # 打开页面
+agent-browser --cdp $PORT snapshot -i          # 可交互元素（操作用）
+agent-browser --cdp $PORT snapshot             # 完整无障碍树（读文字用）
+agent-browser --cdp $PORT click @ref-123       # 点击元素
+agent-browser --cdp $PORT fill @ref-123 "内容" # 填写输入框
+agent-browser --cdp $PORT wait load networkidle  # 仅用于 click/fill 触发导航后；open 已内置等待，勿在 open 后使用
+agent-browser --cdp $PORT scroll down 3000     # 触发懒加载
+agent-browser --cdp $PORT screenshot /tmp/x.png
+agent-browser --cdp $PORT screenshot --annotate      # snapshot -i ref 失效时的升级方案，见 references/commands.md
+agent-browser --cdp $PORT eval "<js>"          # 执行 JS，用于提取 DOM 信息
 ```
 
 ### 图片提取
@@ -120,11 +134,11 @@ agent-browser --cdp 9222 eval "<js>"          # 执行 JS，用于提取 DOM 信
 - **过滤噪声**：`naturalWidth > 200` 排除图标和头像，留下内容图
 
 ```bash
-agent-browser --cdp 9222 scroll down 3000
-agent-browser --cdp 9222 eval "JSON.stringify(Array.from(document.querySelectorAll('img')).map((img,i)=>({i,src:img.src,w:img.naturalWidth,h:img.naturalHeight})).filter(x=>x.w>200))"
+agent-browser --cdp $PORT scroll down 3000
+agent-browser --cdp $PORT eval "JSON.stringify(Array.from(document.querySelectorAll('img')).map((img,i)=>({i,src:img.src,w:img.naturalWidth,h:img.naturalHeight})).filter(x=>x.w>200))"
 # 对每张目标图片：
-agent-browser --cdp 9222 open <img_url>
-agent-browser --cdp 9222 screenshot /tmp/img_n.png
+agent-browser --cdp $PORT open <img_url>
+agent-browser --cdp $PORT screenshot /tmp/img_n.png
 # 用 Read tool 读取截图内容
 ```
 
@@ -134,13 +148,13 @@ CDP headed 模式下浏览器真实渲染，截图可捕获当前视频帧。核
 
 ```bash
 # 获取总时长，制定采样计划
-agent-browser --cdp 9222 eval "document.querySelector('video').duration"
+agent-browser --cdp $PORT eval "document.querySelector('video').duration"
 # seek + 播放 + 截图
-agent-browser --cdp 9222 eval "var v=document.querySelector('video'); v.currentTime=60; v.play()"
+agent-browser --cdp $PORT eval "var v=document.querySelector('video'); v.currentTime=60; v.play()"
 sleep 2
-agent-browser --cdp 9222 screenshot /tmp/frame.png
+agent-browser --cdp $PORT screenshot /tmp/frame.png
 # 全屏截图画面更清晰
-agent-browser --cdp 9222 eval "document.querySelector('video').requestFullscreen()"
+agent-browser --cdp $PORT eval "document.querySelector('video').requestFullscreen()"
 ```
 
 采帧粒度（仅供参考，具体视频具体分析：大概了解 → 30-60s 间隔；理解叙事 → 10s；精细分析 → 1-2s）由任务需求自行判断，无需用户指定。
@@ -163,10 +177,50 @@ agent-browser --cdp 9222 eval "document.querySelector('video').requestFullscreen
 
 ### 任务结束
 
-ensure-browser.sh 返回 `Browser ready`（本次启动）→ 关闭浏览器（**必须用此脚本，勿直接 kill，否则会留下崩溃窗口**）：
+任务结束后关闭浏览器（**必须用此脚本，勿直接 kill，否则会留下崩溃窗口**）：
 ```bash
-bash ~/.claude/skills/web-access/scripts/close-browser.sh
+bash ~/.claude/skills/web-access/scripts/close-browser.sh [端口]   # 默认 9222
 ```
+
+close-browser.sh 同时清理 Chrome 进程和 agent-browser session daemon，调用方无需额外操作。
+
+## 并行调研：子 Agent 分治策略
+
+任务包含多个**独立**调研目标时（如同时调研 N 个项目、N 个来源），鼓励合理分治给子 Agent 并行执行，而非主 Agent 串行处理。
+
+**好处：**
+- **速度**：多子 Agent 并行，总耗时约等于单个子任务时长
+- **上下文保护**：抓取内容不进入主 Agent 上下文，主 Agent 只接收摘要，节省 token
+
+**子 Agent 需继承 skill：**
+在子 Agent prompt 中写 `遵循 web-access skill 的指引` 即可，子 Agent 会自动加载 skill，无需在 prompt 中复制 skill 内容或指定路径。
+
+**子 Agent Prompt 写法：目标导向，而非步骤指令**
+
+子 Agent 有完整的 skill 知识和自主判断能力。主 Agent 的职责是说清楚**要什么**，仅在必要与确信时限定**怎么做**。过度指定步骤会剥夺子 Agent 的判断空间，反而引入主 Agent 的假设错误。
+
+错误：过度指定（预填了未验证的 URL/账号）：
+```
+打开 https://x.com/SomeAccount，抓取最新推文
+```
+
+正确：目标导向（子 Agent 自主发现路径）：
+```
+找到 XX 的官方 X 账号，获取最新推文内容
+```
+
+关键原则：不要预填未经验证的信息，信息来自用户直接提供或已确认时，才可直接传入。
+
+**分治判断标准：**
+
+| 适合分治 | 不适合分治 |
+|----------|-----------|
+| 目标相互独立，结果互不依赖 | 目标有依赖关系，下一个需要上一个的结果 |
+| 每个子任务量足够大（多页抓取、多轮搜索） | 简单单页查询，分治开销大于收益 |
+| 需要 CDP 浏览器或长时间运行的任务 | 几次 WebSearch / Jina 就能完成的轻量查询 |
+
+**CDP 并发：每个端口启动独立 Chrome 实例，互不干扰。**
+主 agent 在启动子 agent 时，在 task prompt 中为每个子 agent 明确指定一个独占端口，避免浏览器实例冲突（从 9222 起，在 9222–9299 范围内选择，每个子 agent 用不同端口）。子 agent 收到端口后调用 `ensure-browser.sh <PORT>` 启动。
 
 ## 特殊任务规则
 
