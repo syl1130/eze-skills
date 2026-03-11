@@ -4,23 +4,12 @@ version: 1.1.0
 author: 一泽Eze
 license: MIT
 github: https://github.com/eze-is-1/eze-skills
-description: |
+description: 
   所有联网操作必须通过此 skill 处理，包括：搜索、网页抓取、登录后操作、动态页面交互等。
   触发场景：用户要求搜索信息、查看网页内容、访问需要登录的网站、操作网页界面、抓取社交媒体内容（小红书、微博、推特等）、读取动态渲染页面、以及任何需要真实浏览器环境的网络任务。
-changelog:
-  - version: 1.1.0
-    date: 2026-03-10
-    changes:
-      - 新增"浏览哲学"框架：三个核心判断（我需要什么/够了吗/遇到阻碍怎么办）
-      - 社交媒体/内容平台直走浏览器 CDP，跳过 WebFetch
-      - 新增视频内容采帧分析能力（seek + screenshot）
-      - 完善 already-running 状态处理：必须验证后才能使用
-      - 细化 wait 命令使用时机说明
-      - 新增 screenshot --annotate 作为 snapshot -i 失效时的升级方案
-  - version: 1.0.0
-    date: 2025-01-01
-    changes:
-      - 初始版本
+metadata:
+  author: 一泽Eze
+  version: "1.2.0"
 ---
 
 # web-access Skill
@@ -43,7 +32,7 @@ bash ~/.claude/skills/web-access/scripts/check-deps.sh
 > web-access 已就绪。凡是联网的需求直接说就行，我会自动选最合适的方式：
 > - 只需要搜索结果 → 直接搜，最快
 > - 需要看完整页面 → 抓取页面内容，不启动浏览器
-> - 需要登录或动态页面 → 自动启动浏览器，登录一次后持久保存
+> - 需要登录/动态页面/浏览器操作 → 自动启动浏览器，登录一次后持久保存
 >
 > Windows 用户需要 Git Bash 环境（安装 Git for Windows 即可）。
 
@@ -69,13 +58,19 @@ bash ~/.claude/skills/web-access/scripts/check-deps.sh
 | 场景 | 通道 |
 |------|------|
 | 只需搜索摘要或关键词结果，或需要发现信息来源 | **WebSearch** |
-| URL 已知，静态公开页面 | **WebFetch** |
-| 社交媒体、内容平台（微信公众号、微博、小红书、X/Twitter 等） | **浏览器 CDP**（直接，跳过 WebFetch） |
+| URL 已知，读取页面内容 | **Jina**（默认）；需要精确 meta / 统计数据时改用 **WebFetch** |
+| URL 是 PDF | **Jina** |
+| 非公开内容，或已知静态层无效的平台（小红书、微信公众号等公开内容也被反爬限制） | **浏览器 CDP**（直接，跳过静态层） |
 | 需要动态内容、登录态、交互操作，或需要像人一样在浏览器内自由导航探索 | **浏览器 CDP** |
 
 浏览器 CDP 不要求 URL 已知——可从任意入口出发，通过页面内搜索、点击、跳转等方式找到目标内容。
 
-WebFetch 请求时加 header `Accept: text/markdown, text/html`，支持该协议的网站直接返回 Markdown，省约 80% token。失败（空内容 / 403 / JS 渲染）时升级到浏览器层。
+**Jina**：调用方式为 `r.jina.ai/example.com`（URL 前加前缀，不保留原网址 http 前缀）。免费限速 20 RPM，token 消耗很低。
+底层用 Puppeteer 渲染页面（能处理 JS/SPA），再用 Readability 算法提取主文章内容转为 Markdown，会过滤导航、广告、侧边栏等噪声。适合文章、博客、文档、PDF 等以正文为核心的页面；对视频页、数据面板、商品页等非文章结构页面，可能提取到错误区块。拿到结果后判断内容是否符合任务预期，不符合则切换访问策略。
+
+**WebFetch**：直接获取原始 HTML，不执行 JS。页面中嵌入的完整结构化数据（meta 标签、JSON-LD、data 属性等）完整保留，JS 渲染的内容拿不到。请求时加 header `Accept: text/markdown, text/html`，支持该协议的网站直接返回 Markdown。
+
+**选择逻辑**：默认用 Jina。但如果任务明确需要精确的结构化字段（播放量、发布时间、OG 标签等藏在 HTML 源码而非页面正文的数据），直接用 WebFetch——这类数据 Jina 拿不到或不可靠。Jina 和 WebFetch 均无法处理时（空内容、403、需登录）→ 升级浏览器层。
 
 
 **降级禁止**：进入更重的通道后，不得回头用轻量工具完成同一目标——等同于重走已知不通的路。浏览器层遇到阻碍应在层内解决（如处理登录），而不是绕回。唯一例外：浏览器操作中衍生的新子目标，可重新选择通道。
