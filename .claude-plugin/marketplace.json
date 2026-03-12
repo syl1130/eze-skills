@@ -13,7 +13,7 @@
   "plugins": [
     {
       "name": "web-access",
-      "source": {"source": "github", "repo": "eze-is/web-access"},
+      "source": "./web-access",
       "description": "Enhanced web browsing for Claude Code. Handles search, scraping, login flows, and dynamic pages via Playwright. Use for any task requiring real browser interaction.",
       "version": "1.3.0",
       "keywords": ["web", "browser", "scraping", "playwright", "search"],
