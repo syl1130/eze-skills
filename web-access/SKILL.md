@@ -80,6 +80,10 @@ bash ~/.claude/skills/web-access/scripts/check-deps.sh
 
 在页面内浏览时，**先 eval 了解页面结构，再决定下一步动作**——看到列表就点进详情，看到分页就翻页，看到内容就提取。不需要提前规划所有步骤。
 
+### URL 是实现细节，UI 是约定
+
+需要在网站上执行搜索、筛选等操作时，优先通过 UI 交互（填写搜索框 → 点击按钮），而非凭记忆构造带参数的 URL——内部参数（城市代码、分类 ID 等）随时可变，且 SPA 不一定靠 URL 参数触发数据加载。
+
 ## 浏览器 CDP 模式
 
 通过 CDP Proxy 直连用户日常 Chrome，天然携带登录态，无需启动独立浏览器。
@@ -89,7 +93,7 @@ bash ~/.claude/skills/web-access/scripts/check-deps.sh
 
 ```bash
 # 确保 proxy 运行（已运行则跳过，未运行则启动）
-curl -s http://localhost:3456/health 2>/dev/null | grep -q '"ok"' || { node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs > /tmp/cdp-proxy.log 2>&1 & sleep 1; }
+if ! curl -s http://localhost:3456/health 2>/dev/null | grep -q '"ok"'; then node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs > /tmp/cdp-proxy.log 2>&1 & sleep 1; fi
 ```
 
 Proxy 20 分钟无请求自动退出，下次需要时重新启动即可。`/health` 返回 `connected: false` 时说明 Chrome 未连接，需提示用户检查。
