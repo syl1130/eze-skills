@@ -12,26 +12,18 @@ metadata:
 
 # web-access Skill
 
-## 首次安装
+## CDP 环境检查
 
-用户首次使用时，执行以下流程：
+需要使用浏览器 CDP 模式前，运行检查：
 
-**Step 1：运行环境探测**
 ```bash
 bash ~/.claude/skills/web-access/scripts/check-deps.sh
 ```
 
-**Step 2：AI 根据输出处理缺失依赖**
+- **Node.js 22+**：必需（使用原生 WebSocket）。版本低于 22 可用但需安装 `ws` 模块。
+- **Chrome remote-debugging**：在 Chrome 地址栏打开 `chrome://inspect/#remote-debugging`，勾选 **"Allow remote debugging for this browser instance"** 即可，可能需要重启浏览器。
 
-- **Node.js 22+**：必需（使用原生 WebSocket，零额外依赖）。版本低于 22 可用但需安装 `ws` 模块。
-- **Chrome remote-debugging**：需要用户以 `--remote-debugging-port=9222` 启动 Chrome。脚本会检测并给出平台对应的启动命令。
-
-**Step 3：安装完成后，向用户说明以下内容**
-
-> web-access v2 已就绪。凡是联网的需求直接说就行，我会自动选最合适的方式：
-> - 只需要搜索结果 → 直接搜，最快
-> - 需要看完整页面 → 抓取页面内容，不启动浏览器
-> - 需要登录/动态页面/浏览器操作 → 直连你日常 Chrome，天然携带登录态，无需重复登录
+检查通过后再启动 CDP Proxy 执行操作，未通过则引导用户完成设置。
 
 ## 浏览哲学
 
