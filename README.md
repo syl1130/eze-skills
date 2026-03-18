@@ -29,29 +29,39 @@ cp -R eze-skills/daily-news ~/.claude/skills/
 
 | Skill | 简介 | 触发方式 |
 |-------|------|---------|
-| [web-access](./web-access) | 让 Claude Code 真正能上网，支持登录态持久化 | 自动触发 |
+| [web-access](./web-access) | v2 — CDP Proxy 直连用户 Chrome，零依赖浏览器自动化 | 自动触发 |
+| [web-access-v1](./web-access-v1) | v1 — 基于 agent-browser 的独立 Chrome 实例方案（稳定备份） | 自动触发 |
 | [daily-news](./daily-news) | 每日资讯日报生成器，支持自定义信源 | 自动触发 |
 
 ---
 
-## web-access
+## web-access (v2)
 
-Claude Code 原生有联网能力，但降级策略不完善，也不支持持久化登录。web-access 在原有基础上补全了整个联网操作链路，以**「像人一样浏览」**为核心理念：带着目标进入，边看边判断，遇到阻碍在层内解决，不打扰用户。
+以**「像人一样浏览」**为核心理念，补全 Claude Code 的联网操作链路。v2 通过 CDP Proxy 直连用户日常 Chrome，天然携带登录态，无需启动独立浏览器。
 
 遇到联网任务时自动按代价从低到高选择方式：
 
 1. **WebSearch** — 只需搜索结果，最轻量
-2. **Jina**（默认）— 底层执行 JS 渲染，提取正文为 Markdown，支持 SPA、PDF，token 消耗低
-3. **WebFetch** — 直接获取原始 HTML（不执行 JS），用于读取服务端静态嵌入的结构化字段（meta、JSON-LD 等）
-4. **agent-browser CDP 模式** — 非公开内容、已知反爬平台（小红书、微信公众号等）或需要交互时使用
+2. **Jina**（默认）— 底层执行 JS 渲染，提取正文为 Markdown，支持 SPA、PDF
+3. **WebFetch** — 直接获取原始 HTML（不执行 JS），用于读取结构化字段（meta、JSON-LD 等）
+4. **CDP Proxy** — 通过轻量 HTTP API 操控用户 Chrome，支持 eval、click、scroll、screenshot 等
 
-引入 [agent-browser](https://www.npmjs.com/package/agent-browser) 的原因：accessibility tree 快照比截图节省约 10x token，独立 Chrome profile 实现登录态持久化，不影响用户自己的浏览器。
-
-首次使用需检查依赖：
+相比 v1 的优势：
+- **Token 消耗降至 1/5~1/8**（curl HTTP API vs agent-browser CLI）
+- **速度最快**（直连 Chrome，无中间层）
+- **并发安全**（多 agent 共享一个 proxy，tab 级别隔离，无竞态）
+- **零额外依赖**（Node.js 22+ 即可，无需 npm install）
+- **天然登录态**（用户日常 Chrome，无需重复登录）
 
 ```bash
 bash ~/.claude/skills/web-access/scripts/check-deps.sh
 ```
+
+## web-access-v1（稳定备份）
+
+基于 [agent-browser](https://www.npmjs.com/package/agent-browser) 的方案，启动独立 Chrome 实例，通过 accessibility tree 交互。功能完整，已稳定使用。如果 v2 不适合你的场景，可以使用此版本。
+
+主要差异：独立 Chrome profile（登录态持久化但与日常浏览器分离）、依赖 agent-browser npm 包。
 
 ---
 
